@@ -43,6 +43,26 @@ def qenum(cls, scope, name):
     return getattr(cls, name)
 
 
+def enable_touch_scroll(area):
+    """タッチパネル (指でのドラッグ) でスクロールできるようにする。
+    タッチはマウス操作として届くことが多いので、左ボタンのドラッグでフリックスクロールさせる。"""
+    viewport = area.viewport()
+    viewport.setAttribute(qenum(QtCore.Qt, "WidgetAttribute", "WA_AcceptTouchEvents"), False)
+    QtWidgets.QScroller.grabGesture(
+        viewport, qenum(QtWidgets.QScroller, "ScrollerGestureType", "LeftMouseButtonGesture"))
+    scroller = QtWidgets.QScroller.scroller(viewport)
+    props = scroller.scrollerProperties()
+    P = QtWidgets.QScrollerProperties
+    off = qenum(P, "OvershootPolicy", "OvershootAlwaysOff")
+    props.setScrollMetric(qenum(P, "ScrollMetric", "HorizontalOvershootPolicy"), off)
+    props.setScrollMetric(qenum(P, "ScrollMetric", "VerticalOvershootPolicy"), off)
+    props.setScrollMetric(qenum(P, "ScrollMetric", "DragStartDistance"), 0.004)
+    props.setScrollMetric(qenum(P, "ScrollMetric", "MousePressEventDelay"), 0.15)
+    props.setScrollMetric(qenum(P, "ScrollMetric", "DecelerationFactor"), 0.3)
+    scroller.setScrollerProperties(props)
+    return scroller
+
+
 # -----------------------------------------------------------------------------
 # 設定・ユーティリティ
 # -----------------------------------------------------------------------------
@@ -592,7 +612,6 @@ class TargetCard(QtWidgets.QFrame):
         self.remote_lbl = QtWidgets.QLabel("—")
         for w in (self.local_lbl, self.remote_lbl):
             w.setTextFormat(qenum(QtCore.Qt, "TextFormat", "RichText"))
-            w.setTextInteractionFlags(qenum(QtCore.Qt, "TextInteractionFlag", "TextSelectableByMouse"))
             # 長いコミットメッセージは折り返して全文を表示 (カードを画面より広げない)
             w.setWordWrap(True)
             w.setMinimumWidth(0)
@@ -738,8 +757,8 @@ QPlainTextEdit {{ background: {c['log_bg']}; color: {c['log_text']}; border-radi
                  font-family: monospace; font-size: 13px; }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
-QScrollBar:vertical {{ background: transparent; width: 12px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: {c['scroll']}; border-radius: 4px; min-height: 40px; }}
+QScrollBar:vertical {{ background: transparent; width: 16px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: {c['scroll']}; border-radius: 6px; min-height: 48px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 QProgressBar {{ background: {c['border']}; border: none; border-radius: 3px; }}
@@ -840,6 +859,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # 横スクロールは出さず、カードの幅を画面幅に合わせる
         scroll.setHorizontalScrollBarPolicy(qenum(QtCore.Qt, "ScrollBarPolicy", "ScrollBarAlwaysOff"))
         scroll.setWidget(cards_box)
+        enable_touch_scroll(scroll)
         v.addWidget(scroll, 3)
 
         # ログ
@@ -856,6 +876,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logbar.addWidget(clear)
         v.addLayout(logbar)
         self.logview = QtWidgets.QPlainTextEdit()
+        enable_touch_scroll(self.logview)
         self.logview.setReadOnly(True)
         self.logview.setMaximumBlockCount(5000)
         clear.clicked.connect(self.logview.clear)
@@ -1116,6 +1137,7 @@ class MainWindow(QtWidgets.QMainWindow):
         lay = QtWidgets.QVBoxLayout(d)
         lay.addWidget(QtWidgets.QLabel(f"未適用のコミット: {res.get('behind', 0)} 件（新しい順）"))
         tb = QtWidgets.QTextBrowser()
+        enable_touch_scroll(tb)
         tb.setHtml(f"<table cellspacing='0' cellpadding='4'>{rows}</table>")
         lay.addWidget(tb)
         btn = QtWidgets.QPushButton("閉じる")
