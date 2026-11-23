@@ -7,8 +7,14 @@
       "path": "/motivnavi/mediablue",
       "post_update": [
         {
-          "label": "Dockerコンテナを再ビルドして起動",
-          "command": ["docker", "compose", "up", "-d", "--build"],
+          "label": ".deb をビルド (scripts/build-deb.sh)",
+          "command": ["./scripts/build-deb.sh"],
+          "as": "owner"
+        },
+        {
+          "label": ".deb をインストール (dist/mediablue.deb)",
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall",
+                      "-o", "Dpkg::Use-Pty=0", "./dist/mediablue.deb"],
           "as": "root"
         }
       ]
@@ -20,9 +26,15 @@
       "path": "/motivnavi/linuxauto",
       "post_update": [
         {
-          "label": "サービスを再登録 (install-service.sh)",
-          "command": ["./install-service.sh"],
-          "as": "user"
+          "label": ".deb をビルド (build-deb.sh)",
+          "command": ["./build-deb.sh"],
+          "as": "owner"
+        },
+        {
+          "label": ".deb をインストール (dist/linux-auto.deb)",
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall",
+                      "-o", "Dpkg::Use-Pty=0", "./dist/linux-auto.deb"],
+          "as": "root"
         }
       ]
     },

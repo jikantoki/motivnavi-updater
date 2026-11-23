@@ -12,6 +12,7 @@
 #   motivnavi-updater-helper fetch <対象ID>
 #   motivnavi-updater-helper pull  <対象ID>
 #   motivnavi-updater-helper post  <対象ID> <後処理の番号>
+#     (後処理の "as": "root" は root で、"owner" はリポジトリの所有者で実行)
 #   motivnavi-updater-helper list
 # =============================================================================
 
@@ -164,11 +165,16 @@ def main(argv):
         except (IndexError, ValueError):
             say("[エラー] 後処理の番号が不正です")
             return 2
-        if step.get("as", "root") != "root":
+        mode = step.get("as", "root")
+        if mode not in ("root", "owner"):
             say("[エラー] この後処理は一般ユーザーで実行する設定です")
             return 2
         say(f"==> {t.get('name', t['id'])}: {step.get('label', '後処理')}")
         cmd = resolve_command(step["command"], t["path"])
+        if mode == "owner":
+            # リポジトリの所有者として実行 (ビルド成果物の所有者をそろえるため)
+            preexec, env = owner_preexec(t["path"])
+            return run(cmd, t["path"], preexec, env)
         return run(cmd, t["path"])
 
     say(f"[エラー] 不明な操作です: {action}")

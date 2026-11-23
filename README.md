@@ -12,8 +12,8 @@ Motivnavi OS にプリインストールされたアプリを、GUI でアップ
 - **すべてアップデート**（アップデートがあるものだけ）と、アプリごとの **個別アップデート**
 - `git pull` は `sudo` で実行。パスワードが必要なときだけ GUI のパスワードダイアログを表示
 - アップデート後の後処理を自動実行
-  - `/motivnavi/mediablue` … `docker compose up -d --build`（root で実行）
-  - `/motivnavi/linuxauto` … `./install-service.sh`（ログイン中のユーザーで実行）
+  - `/motivnavi/mediablue` … `scripts/build-deb.sh` で .deb をビルド → `apt install ./dist/mediablue.deb`
+  - `/motivnavi/linuxauto` … `build-deb.sh` で .deb をビルド → `apt install ./dist/linux-auto.deb`
   - `/motivnavi/updater` … このアップデーター自身。最新の .deb をビルドしてインストールし、新しい版で再起動
 - 実行ログを画面下部に表示（アップデート時は自動で開きます）
 - タッチ操作しやすい大きめのボタン
@@ -58,7 +58,8 @@ sudo ./install.sh
 
 - Python 3 と PyQt6（無ければ PyQt5）… Kubuntu では `python3-pyqt6`
 - git、sudo（sudo-rs でも可）
-- Mediablue 用に Docker と Docker Compose
+- 各アプリの .deb のビルドに必要なもの（Mediablue は Rust / Tauri のビルド環境。
+  `scripts/build-deb.sh` が不足分を自動で用意します）
 
 ## 仕組み
 
@@ -81,8 +82,13 @@ sudo ./install.sh
 - アップデーター自身は「すべてアップデート」でも必ず最後に更新し、終わったら新しい版で再起動するか確認します。
   インストール時、`/etc/motivnavi-updater/targets.json` を手で編集していなければ新しい設定に置き換わり、
   編集していれば編集した内容が残ります。
-- `install-service.sh` は systemd の **ユーザーサービス** を登録するスクリプトのため、root ではなく
-  アプリを起動したユーザーで実行します（そのためこのアプリは `sudo` を付けずに起動してください）。
+- Mediablue / Linux Auto の .deb のビルドは **リポジトリの所有者** の権限で実行し（root 所有なら root）、
+  できた `dist/*.deb` を root で `apt-get install --reinstall` します。
+  .deb のファイル名は毎回同じで版が変わらないこともあるため、`--reinstall` で必ず入れ直します。
+- リポジトリが一般ユーザーの所有で、Mediablue のビルドに足りないパッケージがある場合、
+  `scripts/build-deb.sh` の中の `sudo apt-get install` がパスワードを聞けずに失敗します。
+  その場合は一度だけターミナルで `bash scripts/build-deb.sh` を実行して準備してください。
+- このアプリは `sudo` を付けずに起動してください（`"as": "user"` の後処理は起動したユーザーで実行するため）。
 
 ### 起動直後の自動確認について
 
@@ -113,7 +119,8 @@ git にはプッシュされた日時が記録されないため、「リモー�
 ```
 
 - `branch` は省略可（省略時は現在のブランチの追跡先）
-- `as` は `"root"`（sudo で実行）か `"user"`（ログイン中のユーザーで実行）
+- `as` は `"root"`（sudo で root として実行）、`"owner"`（sudo 経由でリポジトリの所有者として実行）、
+  `"user"`（アプリを起動したユーザーで実行）のどれか
 
 ## パスワード入力を省略したい場合（任意）
 

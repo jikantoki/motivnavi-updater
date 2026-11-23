@@ -402,7 +402,7 @@ class StepRunner(QtCore.QObject):
             steps = [("root", [helper_path(), "pull", t["id"]], "git pull")]
             for i, s in enumerate(t.get("post_update", [])):
                 label = s.get("label", " ".join(s["command"]))
-                if s.get("as", "root") == "root":
+                if s.get("as", "root") in ("root", "owner"):
                     steps.append(("root", [helper_path(), "post", t["id"], str(i)], label))
                 else:
                     steps.append(("user", resolve_user_command(s["command"], t["path"]), label))
