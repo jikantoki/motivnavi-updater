@@ -47,9 +47,7 @@ def qenum(cls, scope, name):
 # 設定・ユーティリティ
 # -----------------------------------------------------------------------------
 def helper_path():
-    p = os.path.join(INSTALLED_DIR, "motivnavi-updater-helper")
-    if HERE == INSTALLED_DIR or os.path.exists(p):
-        return p
+    # インストール版は /usr/lib のヘルパー、ソースから起動した場合は同じフォルダのヘルパー
     return os.path.join(HERE, "motivnavi-updater-helper")
 
 
@@ -62,6 +60,18 @@ def config_path():
 def load_targets():
     with open(config_path(), encoding="utf-8") as f:
         return json.load(f).get("targets", [])
+
+
+def installed_version():
+    """dpkg に登録されているこのアプリの版 (.deb で入れていない場合は APP_VERSION)。"""
+    try:
+        r = subprocess.run(["dpkg-query", "-W", "-f=${Version}", APP_ID],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return APP_VERSION
 
 
 def git_env():
@@ -637,6 +647,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.runner.all_finished.connect(self._on_all_finished)
         self.worker = None
         self.results_ok = []
+        self.version = installed_version()
 
         try:
             self.targets = load_targets()
@@ -701,7 +712,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ログ
         logbar = QtWidgets.QHBoxLayout()
         self.log_toggle = QtWidgets.QToolButton()
-        self.log_toggle.setText("▼ ログ")
+        self.log_toggle.setText("▶ ログ")
         self.log_toggle.setCheckable(True)
         self.log_toggle.setChecked(False)
         self.log_toggle.setStyleSheet("QToolButton { border: none; font-weight: 600; padding: 4px; }")
@@ -721,7 +732,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # フッター (製作者情報)
         footer = QtWidgets.QLabel(
-            f'{APP_NAME} v{APP_VERSION} — 製作: {VENDOR} '
+            f'{APP_NAME} v{self.version} — 製作: {VENDOR} '
             f'<a href="{VENDOR_URL}">{VENDOR_URL}</a>')
         footer.setObjectName("footer")
         footer.setOpenExternalLinks(True)
@@ -730,7 +741,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._build_menu()
         self.setStyleSheet(STYLE)
-        self.log(f"{APP_NAME} v{APP_VERSION} ({QT_API})\n設定ファイル: {config_path()}\n")
+        self.log(f"{APP_NAME} v{self.version} ({QT_API})\n設定ファイル: {config_path()}\n")
         QtCore.QTimer.singleShot(200, lambda: self.check(full=False))
 
     # --- メニュー -------------------------------------------------------------
@@ -753,7 +764,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def about(self):
         QtWidgets.QMessageBox.about(
             self, f"{APP_NAME} について",
-            f"<h3>{APP_NAME} v{APP_VERSION}</h3>"
+            f"<h3>{APP_NAME}</h3><p>バージョン {self.version}</p>"
             f"<p>Motivnavi OS のアプリをアップデートするツールです。</p>"
             f"<p>製作: <b>{VENDOR}</b><br><a href='{VENDOR_URL}'>{VENDOR_URL}</a></p>"
             f"<p style='color:#777'>Qt: {QT_API} / 設定: {config_path()}</p>")
@@ -850,6 +861,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.sudo.ensure():
             self.log("[中止] 管理者権限を取得できませんでした\n")
             return
+        # アップデーター自身は最後に更新する (更新後に再起動するため)
+        targets = sorted(targets, key=lambda t: bool(t.get("self")))
         self.results_ok = []
         self.log_toggle.setChecked(True)
         self.busy(True, "アップデートしています…")
@@ -875,7 +888,32 @@ class MainWindow(QtWidgets.QMainWindow):
                                           + "\n".join(failed))
         else:
             self.statusBar().showMessage("アップデートが完了しました", 8000)
+        self_ok = any(ok and self.cards[tid].target.get("self") for tid, ok in self.results_ok)
+        if self_ok and self.ask_restart():
+            return
         self.check(full=True)
+
+    def ask_restart(self):
+        """アップデーター自身を更新したあと、新しい版で起動し直す。"""
+        new_version = installed_version()
+        self.log(f"[updater] インストールされた版: {new_version}\n")
+        if not self._confirm(f"{APP_NAME} を {new_version} に更新しました。\n"
+                             "新しいバージョンで再起動しますか？"):
+            self.version = new_version
+            return False
+        launcher = shutil.which(APP_ID)
+        if launcher:
+            ok = QtCore.QProcess.startDetached(launcher, [])
+        else:
+            ok = QtCore.QProcess.startDetached(sys.executable, [os.path.realpath(__file__)])
+        if isinstance(ok, tuple):  # PyQt5/6 のバージョンによっては (bool, pid) を返す
+            ok = ok[0]
+        if not ok:
+            QtWidgets.QMessageBox.warning(self, APP_NAME, "再起動できませんでした。手動で起動し直してください。")
+            return False
+        self.sudo.password = None
+        QtWidgets.QApplication.quit()
+        return True
 
     # --- 変更内容 -------------------------------------------------------------
     def show_details(self, tid):

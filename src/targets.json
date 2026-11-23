@@ -25,6 +25,20 @@
           "as": "user"
         }
       ]
+    },
+    {
+      "id": "updater",
+      "name": "Motivnavi Updater",
+      "description": "このアップデーター自身",
+      "path": "/motivnavi/updater",
+      "self": true,
+      "post_update": [
+        {
+          "label": "最新の .deb をビルドしてインストール",
+          "command": ["./build-deb.sh", "--install"],
+          "as": "root"
+        }
+      ]
     }
   ]
 }

@@ -14,12 +14,25 @@ Motivnavi OS にプリインストールされたアプリを、GUI でアップ
 - アップデート後の後処理を自動実行
   - `/motivnavi/mediablue` … `docker compose up -d --build`（root で実行）
   - `/motivnavi/linuxauto` … `./install-service.sh`（ログイン中のユーザーで実行）
+  - `/motivnavi/updater` … このアップデーター自身。最新の .deb をビルドしてインストールし、新しい版で再起動
 - 実行ログを画面下部に表示（アップデート時は自動で開きます）
 - タッチ操作しやすい大きめのボタン
 
 ## インストール
 
-### .deb パッケージで入れる（おすすめ）
+### /motivnavi/updater に置いて入れる（おすすめ・自己アップデート対応）
+
+このリポジトリを `/motivnavi/updater` に clone し、そこから .deb をビルドしてインストールします。
+以後はアプリの「Motivnavi Updater」カードの **アップデート** ボタン 1 回で、
+`git pull` → 最新 .deb のビルド → インストール → 再起動 まで自動で行います。
+
+```bash
+sudo git clone <このリポジトリのURL> /motivnavi/updater
+cd /motivnavi/updater
+sudo bash build-deb.sh --install
+```
+
+### .deb パッケージを作って入れる
 
 ```bash
 ./build-deb.sh
@@ -31,6 +44,10 @@ sudo apt install ./dist/motivnavi-updater_1.0.0_all.deb
 ```bash
 sudo ./install.sh
 ```
+
+`build-deb.sh` の版番号は「`APP_VERSION` + git のコミット日時とハッシュ」
+（例: `1.0.0+git20261123174200.abc1234`）になるので、git pull するたびに apt で正しく上書き更新されます。
+`--install` を付けると一時フォルダでビルドしてそのままインストールします（リポジトリ内に dist/ は作りません）。
 
 アンインストールは `sudo ./uninstall.sh`（設定も消す場合は `--purge`）、
 .deb の場合は `sudo apt remove motivnavi-updater` です。
@@ -61,6 +78,9 @@ sudo ./install.sh
   （root 所有のファイルが混ざらないようにするため）。
 - `git pull` は安全のため `--ff-only`（早送りのみ）で実行します。手元で変更や独自コミットがあると失敗するので、
   その場合はログを確認して手動で解決してください。
+- アップデーター自身は「すべてアップデート」でも必ず最後に更新し、終わったら新しい版で再起動するか確認します。
+  インストール時、`/etc/motivnavi-updater/targets.json` を手で編集していなければ新しい設定に置き換わり、
+  編集していれば編集した内容が残ります。
 - `install-service.sh` は systemd の **ユーザーサービス** を登録するスクリプトのため、root ではなく
   アプリを起動したユーザーで実行します（そのためこのアプリは `sudo` を付けずに起動してください）。
 
@@ -108,6 +128,15 @@ sudo chmod 440 /etc/sudoers.d/motivnavi-updater
 
 この場合でも、ヘルパーが実行するのは `/etc/motivnavi-updater/targets.json`（root しか編集できない）
 に書かれた処理だけです。
+
+## Windows から push する場合
+
+Windows 上で commit すると .sh の実行権限が付かないことがあります（後処理は実行権限が無くても
+`bash` で実行するので動きますが）、付けておく場合は次のようにします。
+
+```bash
+git update-index --chmod=+x build-deb.sh install.sh uninstall.sh src/motivnavi-updater-helper data/motivnavi-updater
+```
 
 ## 開発中の動作確認
 
