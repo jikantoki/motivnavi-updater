@@ -9,6 +9,7 @@
 # 任意のコマンドは受け付けません (対象 ID と後処理の番号だけを受け取ります)。
 #
 # 使い方:
+#   motivnavi-updater-helper info  <対象ID>   (fetch して状態を JSON で出力)
 #   motivnavi-updater-helper fetch <対象ID>
 #   motivnavi-updater-helper pull  <対象ID>
 #   motivnavi-updater-helper post  <対象ID> <後処理の番号>
@@ -106,10 +107,98 @@ def run(cmd, cwd, preexec=None, env=None):
 
 
 def git(t, *args):
+    # core.fileMode=false: /motivnavi の権限を chmod で変えても「変更あり」と扱わない (pull が止まらないように)
+    # git は root (sudo) で実行する。.git の中に root 所有と一般ユーザー所有のファイルが
+    # 混ざっていても失敗しないようにするため (/motivnavi 以下は sudo 必須の前提)
     path = t["path"]
-    preexec, env = owner_preexec(path)
-    cmd = ["git", "-c", f"safe.directory={path}", "-C", path, *args]
-    return run(cmd, path, preexec, env)
+    cmd = ["git", "-c", f"safe.directory={path}", "-c", "core.fileMode=false", "-C", path, *args]
+    return run(cmd, path, repo_umask(path))
+
+
+def repo_umask(path):
+    """git が書き出すファイルの権限を、リポジトリのフォルダの権限に合わせる preexec。
+    例: フォルダが 750 なら umask 027 (他ユーザーは読み書き・実行不可) で書き出す。"""
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return None
+    mask = (~mode) & 0o077
+
+    def _set():
+        os.umask(mask)
+
+    return _set
+
+
+INFO_MARK = "@@MOTIVNAVI_INFO@@ "
+
+
+def git_capture(path, *args, timeout=120):
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["LC_ALL"] = "C"
+    try:
+        r = subprocess.run(["git", "-c", f"safe.directory={path}", "-c", "core.fileMode=false", "-C", path, *args],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                           env=env, timeout=timeout)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", "タイムアウトしました"
+
+
+def commit_json(path, ref):
+    rc, out, _ = git_capture(path, "log", "-1", "--format=%H%x1f%h%x1f%cI%x1f%an%x1f%s", ref)
+    if rc != 0 or not out:
+        return None
+    h, short, date, author, subject = (out.split("\x1f") + [""] * 5)[:5]
+    return {"hash": h, "short": short, "date": date, "author": author, "subject": subject}
+
+
+def info(t):
+    """root で fetch してアップデート状況を調べる (GUI の「更新を確認」用)。"""
+    path = t.get("path", "")
+    res = {"id": t["id"], "status": "error", "message": "", "local": None, "remote": None,
+           "behind": None, "ahead": 0, "incoming": [], "fetched": False}
+    if not os.path.isabs(path) or not os.path.isdir(os.path.join(path, ".git")):
+        res["status"] = "missing"
+        res["message"] = f"{path} に git リポジトリが見つかりません"
+        return res
+    res["local"] = commit_json(path, "HEAD")
+    if res["local"] is None:
+        res["message"] = "現在のコミットを取得できません"
+        return res
+    branch = t.get("branch")
+    remote = "origin"
+    if not branch:
+        rc, up, _ = git_capture(path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        if rc == 0 and "/" in up:
+            remote, branch = up.split("/", 1)
+        else:
+            _, branch, _ = git_capture(path, "rev-parse", "--abbrev-ref", "HEAD")
+    ref = f"{remote}/{branch}"
+    rc, _, err = git_capture(path, "fetch", "--prune", remote)
+    res["fetched"] = rc == 0
+    if rc != 0:
+        lines = err.splitlines()
+        res["message"] = "リモートに接続できません" + (f": {lines[-1]}" if lines else "")
+        if git_capture(path, "rev-parse", "--verify", "-q", ref)[0] != 0:
+            return res
+    res["remote"] = commit_json(path, ref)
+    _, behind, _ = git_capture(path, "rev-list", "--count", f"HEAD..{ref}")
+    _, ahead, _ = git_capture(path, "rev-list", "--count", f"{ref}..HEAD")
+    res["behind"] = int(behind or 0)
+    res["ahead"] = int(ahead or 0)
+    if res["behind"]:
+        _, log, _ = git_capture(path, "log", "-n", "50", "--format=%h%x1f%cI%x1f%an%x1f%s", f"HEAD..{ref}")
+        for line in log.splitlines():
+            h, d, a, subj = (line.split("\x1f") + [""] * 4)[:4]
+            res["incoming"].append({"short": h, "date": d, "author": a, "subject": subj})
+        res["status"] = "update"
+    elif res["ahead"]:
+        res["status"] = "ahead"
+    elif res["fetched"]:
+        res["status"] = "latest"
+    return res
 
 
 def resolve_command(cmd, cwd):
@@ -145,6 +234,15 @@ def main(argv):
     if len(argv) < 3:
         say("[エラー] 対象IDを指定してください")
         return 2
+
+    if action == "info":
+        t = load_targets().get(argv[2])
+        if t is None:
+            say(f"[エラー] 不明な対象です: {argv[2]}")
+            return 2
+        say(INFO_MARK + json.dumps(info(t), ensure_ascii=False))
+        return 0
+
     t = get_target(argv[2])
     branch = t.get("branch")
 

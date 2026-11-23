@@ -83,7 +83,7 @@ def git_env():
 
 def git_read(path, *args, timeout=GIT_TIMEOUT):
     """一般ユーザーで git の読み取り系コマンドを実行する。"""
-    cmd = ["git", "-c", "safe.directory=*", "-C", path, *args]
+    cmd = ["git", "-c", "safe.directory=*", "-c", "core.fileMode=false", "-C", path, *args]
     r = subprocess.run(cmd, capture_output=True, text=True, env=git_env(),
                        timeout=timeout, stdin=subprocess.DEVNULL)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
@@ -128,6 +128,24 @@ def fmt_gap(newer, older):
     if sec < 86400:
         return f"{int(sec // 3600)}時間"
     return f"{int(sec // 86400)}日"
+
+
+def repo_state(path):
+    """一般ユーザーから見たリポジトリの状態: "ok" / "missing" (無い) / "denied" (権限が無く読めない)。"""
+    g = os.path.join(path, ".git")
+    try:
+        os.stat(g)
+    except FileNotFoundError:
+        return "missing"
+    except (PermissionError, NotADirectoryError):
+        return "denied"
+    except OSError:
+        return "denied"
+    if not os.path.isdir(g):
+        return "missing"
+    if not os.access(g, os.R_OK | os.X_OK) or not os.access(os.path.join(g, "objects"), os.R_OK | os.X_OK):
+        return "denied"
+    return "ok"
 
 
 def is_git_writable(path):
@@ -274,19 +292,63 @@ def commit_info(path, ref):
     return {"hash": full, "short": short, "date": parse_date(date), "author": author, "subject": subject}
 
 
-def check_target(t, sudo, allow_sudo_fetch):
-    """1つの対象のアップデート状況を調べて dict で返す。"""
+INFO_MARK = "@@MOTIVNAVI_INFO@@ "
+NEED_ADMIN = "確認には管理者権限が必要です。「更新を確認」を押してください"
+
+
+def check_target(t, sudo, allow_sudo):
+    """1つの対象のアップデート状況を調べて dict で返す。
+    sudo が使えるときはヘルパーが root で fetch・確認し、使えないときは一般ユーザーで読める範囲で確認する。"""
+    if allow_sudo:
+        return check_target_root(t, sudo)
+    return check_target_user(t)
+
+
+def check_target_root(t, sudo):
+    res = {"id": t["id"], "status": "error", "message": "", "local": None, "remote": None,
+           "behind": None, "ahead": 0, "incoming": [], "fetched": False}
+    try:
+        rc, out = sudo.run_sync([helper_path(), "info", t["id"]], timeout=180)
+    except subprocess.TimeoutExpired:
+        res["message"] = "タイムアウトしました"
+        return res
+    line = next((l for l in out.splitlines()[::-1] if l.startswith(INFO_MARK)), None)
+    if line is None:
+        detail = out.strip().splitlines()
+        res["message"] = "確認に失敗しました" + (f": {detail[-1]}" if detail else f"（終了コード {rc}）")
+        return res
+    try:
+        data = json.loads(line[len(INFO_MARK):])
+    except ValueError as e:
+        res["message"] = f"確認結果を読み取れません: {e}"
+        return res
+    res.update(data)
+    for key in ("local", "remote"):
+        if res.get(key):
+            res[key]["date"] = parse_date(res[key].get("date") or "")
+    for c in res.get("incoming", []):
+        c["date"] = parse_date(c.get("date") or "")
+    return res
+
+
+def check_target_user(t):
     path = t["path"]
     res = {"id": t["id"], "status": "error", "message": "", "local": None, "remote": None,
            "behind": None, "ahead": 0, "incoming": [], "fetched": False}
-    if not os.path.isdir(os.path.join(path, ".git")):
+    state = repo_state(path)
+    if state == "missing":
         res["status"] = "missing"
         res["message"] = f"{path} に git リポジトリが見つかりません"
+        return res
+    if state == "denied":
+        res["status"] = "unknown"
+        res["message"] = NEED_ADMIN
         return res
     try:
         res["local"] = commit_info(path, "HEAD")
         if res["local"] is None:
-            res["message"] = "現在のコミットを取得できません"
+            res["status"] = "unknown"
+            res["message"] = NEED_ADMIN
             return res
 
         # 追跡ブランチを決める
@@ -307,10 +369,6 @@ def check_target(t, sudo, allow_sudo_fetch):
             rc, _, err = git_read(path, "fetch", "--prune", remote)
             res["fetched"] = rc == 0
             fetch_err = err
-        elif allow_sudo_fetch:
-            rc, out = sudo.run_sync([helper_path(), "fetch", t["id"]])
-            res["fetched"] = rc == 0
-            fetch_err = out
 
         if res["fetched"]:
             remote_hash = None
@@ -333,7 +391,7 @@ def check_target(t, sudo, allow_sudo_fetch):
                     res["status"] = "update"
                     res["remote"] = {"hash": remote_hash, "short": remote_hash[:7], "date": None,
                                      "author": "", "subject": "（詳細は「更新を確認」で取得）"}
-                    res["message"] = "最新コミットの日時は、管理者権限で取得できます"
+                    res["message"] = "最新コミットの日時は「更新を確認」（管理者権限）で取得できます"
                 return res
             target_ref = remote_hash
         else:
@@ -909,10 +967,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def check(self, full=True):
         if self.runner.running() or (self.worker and self.worker.isRunning()):
             return
-        needs_sudo = any(os.path.isdir(os.path.join(t["path"], ".git")) and not is_git_writable(t["path"])
-                         for t in self.targets)
+        has_repo = any(repo_state(t["path"]) != "missing" for t in self.targets)
         allow_sudo = False
-        if needs_sudo:
+        if has_repo:
+            # /motivnavi 以下は sudo 必須なので、「更新を確認」では必要に応じてパスワードを聞く。
             # 起動直後の自動確認ではパスワードを聞かない (ls-remote で簡易確認)
             allow_sudo = self.sudo.ensure() if full else self.sudo.ready()
         self.busy(True, "アップデートを確認しています…")
@@ -945,9 +1003,18 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.subtitle.setText(f"すべて最新です（{now} 確認）")
         self.statusBar().showMessage("確認が完了しました", 5000)
+        if getattr(self, "_update_after_check", False):
+            self._update_after_check = False
+            if not any(c.result and c.result["status"] == "unknown" for c in self.cards.values()):
+                QtCore.QTimer.singleShot(0, self.update_all)
 
     # --- アップデート ---------------------------------------------------------
     def update_all(self):
+        if any(c.result and c.result["status"] == "unknown" for c in self.cards.values()):
+            # 権限不足で未確認のものがある → 管理者権限で確認してから続ける
+            self._update_after_check = True
+            self.check(full=True)
+            return
         checked = [c for c in self.cards.values() if c.result is not None]
         if checked:
             targets = [c.target for c in self.cards.values() if c.has_update()]
@@ -955,7 +1022,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.information(self, APP_NAME, "すべて最新です。")
                 return
         else:
-            targets = [t for t in self.targets if os.path.isdir(os.path.join(t["path"], ".git"))]
+            targets = [t for t in self.targets if repo_state(t["path"]) != "missing"]
         names = "\n".join(f"・{t.get('name', t['id'])}" for t in targets)
         if not self._confirm(f"次のアプリをアップデートします。\n\n{names}\n\nよろしいですか？"):
             return
