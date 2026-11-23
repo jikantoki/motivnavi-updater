@@ -1,0 +1,3 @@
+#!/bin/sh
+# Motivnavi Updater 起動スクリプト - エノキ電気 ENOKI ELECTRONICS (https://enoki.xyz)
+exec /usr/bin/python3 /usr/lib/motivnavi-updater/motivnavi_updater.py "$@"

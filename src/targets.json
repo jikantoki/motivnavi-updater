@@ -1,0 +1,30 @@
+{
+  "targets": [
+    {
+      "id": "mediablue",
+      "name": "Mediablue",
+      "description": "Bluetooth再生中の曲情報表示",
+      "path": "/motivnavi/mediablue",
+      "post_update": [
+        {
+          "label": "Dockerコンテナを再ビルドして起動",
+          "command": ["docker", "compose", "up", "-d", "--build"],
+          "as": "root"
+        }
+      ]
+    },
+    {
+      "id": "linuxauto",
+      "name": "Linux Auto",
+      "description": "Android Auto (Google DHU) 対応ツール",
+      "path": "/motivnavi/linuxauto",
+      "post_update": [
+        {
+          "label": "サービスを再登録 (install-service.sh)",
+          "command": ["./install-service.sh"],
+          "as": "user"
+        }
+      ]
+    }
+  ]
+}

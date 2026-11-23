@@ -1,0 +1,122 @@
+# Motivnavi Updater
+
+Motivnavi OS にプリインストールされたアプリを、GUI でアップデートするツールです。
+
+製作: **エノキ電気 ENOKI ELECTRONICS** — https://enoki.xyz
+
+## できること
+
+- アップデートがあるかを確認（`git fetch` → 未適用のコミット数を表示）
+- **現在入っているコミットの日時** と **リモートの最新コミットの日時** を並べて比較（「◯日新しい」も表示）
+- 「変更内容」ボタンで、未適用のコミット一覧（日時・ハッシュ・メッセージ・作者）を表示
+- **すべてアップデート**（アップデートがあるものだけ）と、アプリごとの **個別アップデート**
+- `git pull` は `sudo` で実行。パスワードが必要なときだけ GUI のパスワードダイアログを表示
+- アップデート後の後処理を自動実行
+  - `/motivnavi/mediablue` … `docker compose up -d --build`（root で実行）
+  - `/motivnavi/linuxauto` … `./install-service.sh`（ログイン中のユーザーで実行）
+- 実行ログを画面下部に表示（アップデート時は自動で開きます）
+- タッチ操作しやすい大きめのボタン
+
+## インストール
+
+### .deb パッケージで入れる（おすすめ）
+
+```bash
+./build-deb.sh
+sudo apt install ./dist/motivnavi-updater_1.0.0_all.deb
+```
+
+### スクリプトで入れる
+
+```bash
+sudo ./install.sh
+```
+
+アンインストールは `sudo ./uninstall.sh`（設定も消す場合は `--purge`）、
+.deb の場合は `sudo apt remove motivnavi-updater` です。
+
+インストール後は、アプリメニューの「Motivnavi Updater」か、`motivnavi-updater` コマンドで起動します。
+
+### 必要なもの
+
+- Python 3 と PyQt6（無ければ PyQt5）… Kubuntu では `python3-pyqt6`
+- git、sudo（sudo-rs でも可）
+- Mediablue 用に Docker と Docker Compose
+
+## 仕組み
+
+| ファイル | 役割 |
+|---|---|
+| `/usr/bin/motivnavi-updater` | 起動コマンド |
+| `/usr/lib/motivnavi-updater/motivnavi_updater.py` | GUI 本体（一般ユーザーで動く） |
+| `/usr/lib/motivnavi-updater/motivnavi-updater-helper` | sudo 経由で呼ばれる特権ヘルパー |
+| `/etc/motivnavi-updater/targets.json` | アップデート対象の設定 |
+
+- GUI は一般ユーザーのまま動き、`git pull`・`git fetch`・root 用の後処理だけを
+  `sudo /usr/lib/motivnavi-updater/motivnavi-updater-helper ...` で実行します。
+- ヘルパーは **設定ファイルに書かれた対象・後処理しか実行しません**（任意のコマンドは受け付けない）。
+- パスワードは最初に必要になったときに 1 回だけ聞き、アプリを閉じるまでメモリ上にだけ保持します。
+  パスワード不要の sudo が設定されている場合はダイアログを出しません。
+- リポジトリの所有者が root 以外の場合、ヘルパーは `git pull` をその所有者の権限で実行します
+  （root 所有のファイルが混ざらないようにするため）。
+- `git pull` は安全のため `--ff-only`（早送りのみ）で実行します。手元で変更や独自コミットがあると失敗するので、
+  その場合はログを確認して手動で解決してください。
+- `install-service.sh` は systemd の **ユーザーサービス** を登録するスクリプトのため、root ではなく
+  アプリを起動したユーザーで実行します（そのためこのアプリは `sudo` を付けずに起動してください）。
+
+### 起動直後の自動確認について
+
+起動直後は、パスワードを聞かずに確認します。リポジトリに書き込み権限が無い場合は `git ls-remote` で
+最新コミットのハッシュだけを調べるため、「リモートの最新」の日時が「不明」になることがあります。
+その場合は「更新を確認」を押すと、管理者権限で `git fetch` して日時・件数・変更内容を表示します。
+
+### 日付について
+
+git にはプッシュされた日時が記録されないため、「リモートの最新」はリモートの最新コミットの
+**コミット日時**（committer date）を表示しています。
+
+## 対象を追加・変更する
+
+`/etc/motivnavi-updater/targets.json` を編集します（root 権限が必要）。
+
+```json
+{
+  "id": "castify",
+  "name": "Castify",
+  "description": "AzuraCast ラジオプレイヤー",
+  "path": "/motivnavi/castify",
+  "branch": "main",
+  "post_update": [
+    { "label": "後処理の説明", "command": ["./build.sh"], "as": "user" }
+  ]
+}
+```
+
+- `branch` は省略可（省略時は現在のブランチの追跡先）
+- `as` は `"root"`（sudo で実行）か `"user"`（ログイン中のユーザーで実行）
+
+## パスワード入力を省略したい場合（任意）
+
+キーボードの無いタブレットで毎回パスワードを入れたくない場合は、ヘルパーだけをパスワード無しで
+実行できるようにできます（セキュリティ上の判断はご自身で行ってください）。
+
+```bash
+echo "%sudo ALL=(root) NOPASSWD: /usr/lib/motivnavi-updater/motivnavi-updater-helper" | \
+  sudo tee /etc/sudoers.d/motivnavi-updater
+sudo chmod 440 /etc/sudoers.d/motivnavi-updater
+```
+
+この場合でも、ヘルパーが実行するのは `/etc/motivnavi-updater/targets.json`（root しか編集できない）
+に書かれた処理だけです。
+
+## 開発中の動作確認
+
+インストールせずに `src/` から直接起動できます（`src/targets.json` を使います）。
+
+```bash
+python3 src/motivnavi_updater.py
+```
+
+---
+
+© エノキ電気 ENOKI ELECTRONICS — https://enoki.xyz

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Motivnavi Updater
+Name[ja]=Motivnavi アップデーター
+GenericName=Software Updater
+GenericName[ja]=アップデーター
+Comment=Update Motivnavi OS apps
+Comment[ja]=Motivnavi OS のアプリを最新の状態にします
+Exec=motivnavi-updater
+Icon=motivnavi-updater
+Terminal=false
+Categories=System;Settings;PackageManager;
+Keywords=update;upgrade;git;motivnavi;アップデート;更新;
+StartupWMClass=motivnavi-updater

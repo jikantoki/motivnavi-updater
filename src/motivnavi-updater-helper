@@ -1,0 +1,179 @@
+#!/usr/bin/python3 -I
+# -*- coding: utf-8 -*-
+# =============================================================================
+# Motivnavi Updater - 特権ヘルパー (motivnavi-updater-helper)
+# 開発者: エノキ電気 ENOKI ELECTRONICS (https://enoki.xyz)
+#
+# GUI から「sudo」経由で呼び出され、設定ファイル (targets.json) に書かれた
+# アップデート対象に対してだけ git fetch / git pull / 後処理コマンドを実行します。
+# 任意のコマンドは受け付けません (対象 ID と後処理の番号だけを受け取ります)。
+#
+# 使い方:
+#   motivnavi-updater-helper fetch <対象ID>
+#   motivnavi-updater-helper pull  <対象ID>
+#   motivnavi-updater-helper post  <対象ID> <後処理の番号>
+#   motivnavi-updater-helper list
+# =============================================================================
+
+import json
+import os
+import pwd
+import shutil
+import subprocess
+import sys
+
+INSTALLED_DIR = "/usr/lib/motivnavi-updater"
+SYSTEM_CONFIG = "/etc/motivnavi-updater/targets.json"
+
+
+def say(msg):
+    print(msg, flush=True)
+
+
+def config_path():
+    here = os.path.dirname(os.path.realpath(__file__))
+    # インストール済みのヘルパーは root 所有の /etc の設定だけを読む
+    if here == INSTALLED_DIR or os.path.exists(SYSTEM_CONFIG):
+        return SYSTEM_CONFIG
+    return os.path.join(here, "targets.json")
+
+
+def load_targets():
+    path = config_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:  # noqa: BLE001
+        say(f"[エラー] 設定ファイルを読み込めません: {path} ({e})")
+        sys.exit(2)
+    return {t["id"]: t for t in data.get("targets", [])}
+
+
+def get_target(tid):
+    targets = load_targets()
+    t = targets.get(tid)
+    if t is None:
+        say(f"[エラー] 不明な対象です: {tid}")
+        sys.exit(2)
+    path = t.get("path", "")
+    if not os.path.isabs(path) or not os.path.isdir(os.path.join(path, ".git")):
+        say(f"[エラー] git リポジトリが見つかりません: {path}")
+        sys.exit(3)
+    return t
+
+
+def owner_preexec(path):
+    """リポジトリの所有者で git を実行するための preexec (所有権を崩さないため)。"""
+    try:
+        st = os.stat(os.path.join(path, ".git"))
+    except OSError:
+        return None, None
+    if os.geteuid() != 0 or st.st_uid == 0:
+        return None, None
+    uid, gid = st.st_uid, st.st_gid
+    env = dict(os.environ)
+    name = None
+    try:
+        pw = pwd.getpwuid(uid)
+        name, gid = pw.pw_name, pw.pw_gid
+        env.update(HOME=pw.pw_dir, USER=pw.pw_name, LOGNAME=pw.pw_name)
+    except KeyError:
+        pass
+
+    def _drop():
+        os.setgid(gid)
+        if name:
+            os.initgroups(name, gid)
+        else:
+            os.setgroups([])
+        os.setuid(uid)
+
+    return _drop, env
+
+
+def run(cmd, cwd, preexec=None, env=None):
+    say("$ " + " ".join(cmd))
+    env = dict(env or os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        r = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL,
+                           preexec_fn=preexec, env=env)
+    except FileNotFoundError:
+        say(f"[エラー] コマンドが見つかりません: {cmd[0]}")
+        return 127
+    return r.returncode
+
+
+def git(t, *args):
+    path = t["path"]
+    preexec, env = owner_preexec(path)
+    cmd = ["git", "-c", f"safe.directory={path}", "-C", path, *args]
+    return run(cmd, path, preexec, env)
+
+
+def resolve_command(cmd, cwd):
+    cmd = list(cmd)
+    if not cmd:
+        return cmd
+    # ./script.sh に実行権限が無い場合は bash で実行
+    if cmd[0].startswith("./"):
+        p = os.path.join(cwd, cmd[0][2:])
+        if os.path.isfile(p) and not os.access(p, os.X_OK):
+            cmd = ["bash"] + cmd
+    # docker compose (v2) が無ければ docker-compose (v1) を使う
+    if cmd[:2] == ["docker", "compose"]:
+        ok = subprocess.run(["docker", "compose", "version"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                            ).returncode == 0 if shutil.which("docker") else False
+        if not ok and shutil.which("docker-compose"):
+            cmd = ["docker-compose"] + cmd[2:]
+    return cmd
+
+
+def main(argv):
+    if len(argv) < 2:
+        say(__doc__ or "usage: motivnavi-updater-helper fetch|pull|post|list ...")
+        return 2
+    action = argv[1]
+
+    if action == "list":
+        for tid, t in load_targets().items():
+            say(f"{tid}\t{t.get('path')}")
+        return 0
+
+    if len(argv) < 3:
+        say("[エラー] 対象IDを指定してください")
+        return 2
+    t = get_target(argv[2])
+    branch = t.get("branch")
+
+    if action == "fetch":
+        return git(t, "fetch", "--prune", "origin")
+
+    if action == "pull":
+        say(f"==> {t.get('name', t['id'])}: git pull ({t['path']})")
+        args = ["pull", "--ff-only"]
+        if branch:
+            args += ["origin", branch]
+        return git(t, *args)
+
+    if action == "post":
+        try:
+            idx = int(argv[3])
+            step = t.get("post_update", [])[idx]
+        except (IndexError, ValueError):
+            say("[エラー] 後処理の番号が不正です")
+            return 2
+        if step.get("as", "root") != "root":
+            say("[エラー] この後処理は一般ユーザーで実行する設定です")
+            return 2
+        say(f"==> {t.get('name', t['id'])}: {step.get('label', '後処理')}")
+        cmd = resolve_command(step["command"], t["path"])
+        return run(cmd, t["path"])
+
+    say(f"[エラー] 不明な操作です: {action}")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
