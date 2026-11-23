@@ -9,12 +9,11 @@
         {
           "label": ".deb をビルド (scripts/build-deb.sh)",
           "command": ["./scripts/build-deb.sh"],
-          "as": "owner"
+          "as": "root"
         },
         {
           "label": ".deb をインストール (dist/mediablue.deb)",
-          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall",
-                      "-o", "Dpkg::Use-Pty=0", "./dist/mediablue.deb"],
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall", "-o", "Dpkg::Use-Pty=0", "./dist/mediablue.deb"],
           "as": "root"
         }
       ]
@@ -28,12 +27,47 @@
         {
           "label": ".deb をビルド (build-deb.sh)",
           "command": ["./build-deb.sh"],
-          "as": "owner"
+          "as": "root"
         },
         {
           "label": ".deb をインストール (dist/linux-auto.deb)",
-          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall",
-                      "-o", "Dpkg::Use-Pty=0", "./dist/linux-auto.deb"],
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall", "-o", "Dpkg::Use-Pty=0", "./dist/linux-auto.deb"],
+          "as": "root"
+        }
+      ]
+    },
+    {
+      "id": "welcome",
+      "name": "Welcome to Motivnavi",
+      "description": "Motivnavi OS のウェルカムアプリ",
+      "path": "/motivnavi/motivnavi-welcome",
+      "post_update": [
+        {
+          "label": ".deb をビルド (build-deb.sh)",
+          "command": ["./build-deb.sh"],
+          "as": "root"
+        },
+        {
+          "label": ".deb をインストール (dist/motivnavi.deb)",
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall", "-o", "Dpkg::Use-Pty=0", "./dist/motivnavi.deb"],
+          "as": "root"
+        }
+      ]
+    },
+    {
+      "id": "screentweaks",
+      "name": "Motivnavi Screentweaks",
+      "description": "画面の点灯・スリープ設定（スクリーン設定）",
+      "path": "/motivnavi/motivnavi-screentweaks",
+      "post_update": [
+        {
+          "label": ".deb をビルド (build-deb.sh)",
+          "command": ["./build-deb.sh"],
+          "as": "root"
+        },
+        {
+          "label": ".deb をインストール (dist/motivnavi-screentweaks.deb)",
+          "command": ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "--reinstall", "-o", "Dpkg::Use-Pty=0", "./dist/motivnavi-screentweaks.deb"],
           "as": "root"
         }
       ]

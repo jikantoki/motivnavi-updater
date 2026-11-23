@@ -14,6 +14,8 @@ Motivnavi OS にプリインストールされたアプリを、GUI でアップ
 - アップデート後の後処理を自動実行
   - `/motivnavi/mediablue` … `scripts/build-deb.sh` で .deb をビルド → `apt install ./dist/mediablue.deb`
   - `/motivnavi/linuxauto` … `build-deb.sh` で .deb をビルド → `apt install ./dist/linux-auto.deb`
+  - `/motivnavi/motivnavi-welcome`（Welcome to Motivnavi）… `build-deb.sh` → `apt install ./dist/motivnavi.deb`
+  - `/motivnavi/motivnavi-screentweaks`（Motivnavi Screentweaks）… `build-deb.sh` → `apt install ./dist/motivnavi-screentweaks.deb`
   - `/motivnavi/updater` … このアップデーター自身。最新の .deb をビルドしてインストールし、新しい版で再起動
 - 実行ログを画面下部に表示（アップデート時は自動で開きます）
 - タッチ操作しやすい大きめのボタン
@@ -82,12 +84,11 @@ sudo ./install.sh
 - アップデーター自身は「すべてアップデート」でも必ず最後に更新し、終わったら新しい版で再起動するか確認します。
   インストール時、`/etc/motivnavi-updater/targets.json` を手で編集していなければ新しい設定に置き換わり、
   編集していれば編集した内容が残ります。
-- Mediablue / Linux Auto の .deb のビルドは **リポジトリの所有者** の権限で実行し（root 所有なら root）、
-  できた `dist/*.deb` を root で `apt-get install --reinstall` します。
+- `/motivnavi` 以下は root 所有（編集には sudo が必要）という前提で、`git pull`・.deb のビルド・
+  `apt-get install --reinstall ./dist/*.deb` をすべて sudo 経由（root）で実行します。
+  ただしリポジトリが一般ユーザーの所有だった場合、`git pull` だけは所有者の権限で実行します。
   .deb のファイル名は毎回同じで版が変わらないこともあるため、`--reinstall` で必ず入れ直します。
-- リポジトリが一般ユーザーの所有で、Mediablue のビルドに足りないパッケージがある場合、
-  `scripts/build-deb.sh` の中の `sudo apt-get install` がパスワードを聞けずに失敗します。
-  その場合は一度だけターミナルで `bash scripts/build-deb.sh` を実行して準備してください。
+- Mediablue のビルドは root で行うため、Rust は `/root/.cargo` に入ります。初回は時間がかかります。
 - このアプリは `sudo` を付けずに起動してください（`"as": "user"` の後処理は起動したユーザーで実行するため）。
 
 ### 起動直後の自動確認について
