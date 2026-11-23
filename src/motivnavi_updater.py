@@ -611,26 +611,93 @@ def _esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-STYLE = """
-QWidget { font-size: 15px; }
-QMainWindow, #root { background: #f3f5f8; }
-#title { font-size: 24px; font-weight: 700; color: #1d2733; }
-#subtitle { color: #5d6875; }
-#card { background: #ffffff; border: 1px solid #dfe4ea; border-radius: 14px; }
-#cardTitle { font-size: 19px; font-weight: 700; color: #1d2733; }
-#badge { color: white; border-radius: 10px; padding: 3px 10px; font-size: 13px; font-weight: 600; }
-#muted { color: #6b7684; font-size: 13px; }
-#key { color: #6b7684; font-size: 13px; }
-#note { color: #9a5b00; font-size: 13px; }
-QPushButton { background: #ffffff; border: 1px solid #c9d1db; border-radius: 10px; padding: 8px 18px; }
-QPushButton:hover { background: #eef2f7; }
-QPushButton:disabled { color: #a6adb6; background: #f2f4f7; }
-QPushButton#primary { background: #1f6feb; color: white; border: none; font-weight: 600; }
-QPushButton#primary:hover { background: #2b7bff; }
-QPushButton#primary:disabled { background: #9db9e6; }
-QPlainTextEdit { background: #10151c; color: #d6dde6; border-radius: 10px; font-family: monospace; font-size: 13px; }
-#footer { color: #6b7684; font-size: 13px; }
+# 配色 (ライト / ダーク)
+THEMES = {
+    "light": {
+        "bg": "#f3f5f8", "card": "#ffffff", "border": "#dfe4ea", "text": "#1d2733",
+        "sub": "#5d6875", "muted": "#6b7684", "note": "#9a5b00", "link": "#1f6feb",
+        "btn": "#ffffff", "btn_border": "#c9d1db", "btn_hover": "#eef2f7",
+        "dis_text": "#a6adb6", "dis_bg": "#f2f4f7",
+        "primary": "#1f6feb", "primary_hover": "#2b7bff", "primary_dis": "#9db9e6", "primary_dis_text": "#eef3fb",
+        "input": "#ffffff", "log_bg": "#10151c", "log_text": "#d6dde6",
+        "scroll": "#c3cad3", "sel": "#cfe0fb",
+    },
+    "dark": {
+        "bg": "#14181e", "card": "#1f252d", "border": "#313944", "text": "#e6ebf1",
+        "sub": "#a3adb9", "muted": "#8e99a6", "note": "#f0b45a", "link": "#6ea8ff",
+        "btn": "#2a313b", "btn_border": "#3c4552", "btn_hover": "#343c48",
+        "dis_text": "#66707c", "dis_bg": "#232931",
+        "primary": "#2f7af0", "primary_hover": "#4a8cf5", "primary_dis": "#2b3f5e", "primary_dis_text": "#7f93ad",
+        "input": "#262c35", "log_bg": "#0b0e12", "log_text": "#d6dde6",
+        "scroll": "#46505c", "sel": "#2b4a78",
+    },
+}
+
+
+def build_style(c):
+    return f"""
+QWidget {{ font-size: 15px; color: {c['text']}; }}
+QMainWindow, QDialog, QMessageBox, #root {{ background: {c['bg']}; }}
+QLabel {{ color: {c['text']}; background: transparent; }}
+QMenuBar {{ background: {c['bg']}; color: {c['text']}; }}
+QMenuBar::item {{ background: transparent; padding: 6px 12px; }}
+QMenuBar::item:selected {{ background: {c['btn_hover']}; border-radius: 6px; }}
+QMenu {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; padding: 4px; }}
+QMenu::item {{ padding: 8px 24px; }}
+QMenu::item:selected {{ background: {c['sel']}; }}
+QStatusBar {{ background: {c['bg']}; color: {c['muted']}; }}
+QToolTip {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; }}
+#title {{ font-size: 24px; font-weight: 700; color: {c['text']}; }}
+#subtitle {{ color: {c['sub']}; }}
+#card {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 14px; }}
+#cardTitle {{ font-size: 19px; font-weight: 700; color: {c['text']}; }}
+#badge {{ color: white; border-radius: 10px; padding: 3px 10px; font-size: 13px; font-weight: 600; }}
+#muted, #key {{ color: {c['muted']}; font-size: 13px; }}
+#note {{ color: {c['note']}; font-size: 13px; }}
+#footer {{ color: {c['muted']}; font-size: 13px; }}
+QPushButton {{ background: {c['btn']}; color: {c['text']}; border: 1px solid {c['btn_border']};
+              border-radius: 10px; padding: 8px 18px; }}
+QPushButton:hover {{ background: {c['btn_hover']}; }}
+QPushButton:disabled {{ color: {c['dis_text']}; background: {c['dis_bg']}; border-color: {c['border']}; }}
+QPushButton#primary {{ background: {c['primary']}; color: white; border: none; font-weight: 600; }}
+QPushButton#primary:hover {{ background: {c['primary_hover']}; }}
+QPushButton#primary:disabled {{ background: {c['primary_dis']}; color: {c['primary_dis_text']}; }}
+QToolButton {{ color: {c['text']}; background: transparent; border: none; font-weight: 600; padding: 4px; }}
+QLineEdit {{ background: {c['input']}; color: {c['text']}; border: 1px solid {c['btn_border']};
+            border-radius: 8px; padding: 6px 10px; selection-background-color: {c['sel']}; }}
+QCheckBox {{ color: {c['text']}; background: transparent; spacing: 8px; }}
+QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid {c['btn_border']};
+                       border-radius: 4px; background: {c['input']}; }}
+QCheckBox::indicator:checked {{ background: {c['primary']}; border-color: {c['primary']}; }}
+QTextBrowser {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 10px; }}
+QPlainTextEdit {{ background: {c['log_bg']}; color: {c['log_text']}; border-radius: 10px;
+                 font-family: monospace; font-size: 13px; }}
+QScrollArea {{ background: transparent; border: none; }}
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+QScrollBar:vertical {{ background: transparent; width: 12px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: {c['scroll']}; border-radius: 4px; min-height: 40px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QProgressBar {{ background: {c['border']}; border: none; border-radius: 3px; }}
+QProgressBar::chunk {{ background: {c['primary']}; border-radius: 3px; }}
 """
+
+
+def system_is_dark():
+    """デスクトップのテーマがダークかどうか (Qt 6.5 以降は colorScheme、それ以外はパレットの明るさで判定)。"""
+    app = QtWidgets.QApplication.instance()
+    hints = app.styleHints()
+    if hasattr(hints, "colorScheme"):
+        scheme = hints.colorScheme()
+        try:
+            if scheme == qenum(QtCore.Qt, "ColorScheme", "Dark"):
+                return True
+            if scheme == qenum(QtCore.Qt, "ColorScheme", "Light"):
+                return False
+        except AttributeError:
+            pass
+    window = app.palette().color(qenum(QtGui.QPalette, "ColorRole", "Window"))
+    return window.lightness() < 128
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -706,7 +773,6 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(qenum(QtWidgets.QFrame, "Shape", "NoFrame"))
         scroll.setWidget(cards_box)
-        scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
         v.addWidget(scroll, 3)
 
         # ログ
@@ -715,7 +781,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_toggle.setText("▶ ログ")
         self.log_toggle.setCheckable(True)
         self.log_toggle.setChecked(False)
-        self.log_toggle.setStyleSheet("QToolButton { border: none; font-weight: 600; padding: 4px; }")
         self.log_toggle.toggled.connect(self._toggle_log)
         logbar.addWidget(self.log_toggle)
         logbar.addStretch(1)
@@ -731,16 +796,20 @@ class MainWindow(QtWidgets.QMainWindow):
         v.addWidget(self.logview, 2)
 
         # フッター (製作者情報)
-        footer = QtWidgets.QLabel(
-            f'{APP_NAME} v{self.version} — 製作: {VENDOR} '
-            f'<a href="{VENDOR_URL}">{VENDOR_URL}</a>')
-        footer.setObjectName("footer")
-        footer.setOpenExternalLinks(True)
-        footer.setAlignment(qenum(QtCore.Qt, "AlignmentFlag", "AlignHCenter"))
-        v.addWidget(footer)
+        self.footer = QtWidgets.QLabel()
+        self.footer.setObjectName("footer")
+        self.footer.setOpenExternalLinks(True)
+        self.footer.setAlignment(qenum(QtCore.Qt, "AlignmentFlag", "AlignHCenter"))
+        v.addWidget(self.footer)
 
+        self.settings = QtCore.QSettings("enoki.xyz", APP_ID)
+        self.theme_mode = os.environ.get("MOTIVNAVI_UPDATER_THEME") or str(self.settings.value("theme", "auto"))
+        self.theme_name = None
         self._build_menu()
-        self.setStyleSheet(STYLE)
+        self.apply_theme()
+        hints = QtWidgets.QApplication.instance().styleHints()
+        if hasattr(hints, "colorSchemeChanged"):
+            hints.colorSchemeChanged.connect(lambda *_: self.apply_theme())
         self.log(f"{APP_NAME} v{self.version} ({QT_API})\n設定ファイル: {config_path()}\n")
         QtCore.QTimer.singleShot(200, lambda: self.check(full=False))
 
@@ -755,19 +824,56 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addSeparator()
         a = m.addAction("終了")
         a.triggered.connect(self.close)
+        vm = mb.addMenu("表示")
+        group = QtGui.QActionGroup(self) if hasattr(QtGui, "QActionGroup") else QtWidgets.QActionGroup(self)
+        for mode, label in (("auto", "テーマ: システムに合わせる"), ("light", "テーマ: ライト"), ("dark", "テーマ: ダーク")):
+            a = vm.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(self.theme_mode == mode)
+            a.triggered.connect(lambda _=False, m=mode: self.set_theme_mode(m))
+            group.addAction(a)
         h = mb.addMenu("ヘルプ")
         a = h.addAction("エノキ電気のWebサイト")
         a.triggered.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(VENDOR_URL)))
         a = h.addAction("このアプリについて")
         a.triggered.connect(self.about)
 
+    # --- テーマ ---------------------------------------------------------------
+    def set_theme_mode(self, mode):
+        self.theme_mode = mode
+        self.settings.setValue("theme", mode)
+        self.apply_theme(force=True)
+
+    def apply_theme(self, force=False):
+        if self.theme_mode in THEMES:
+            name = self.theme_mode
+        else:
+            name = "dark" if system_is_dark() else "light"
+        if name == self.theme_name and not force:
+            return
+        self.theme_name = name
+        self.theme = THEMES[name]
+        # アプリ全体 (ダイアログ・メッセージボックスを含む) に適用
+        QtWidgets.QApplication.instance().setStyleSheet(build_style(self.theme))
+        self.footer.setText(
+            f'{APP_NAME} v{self.version} — 製作: {VENDOR} '
+            f'<a href="{VENDOR_URL}" style="color:{self.theme["link"]}">{VENDOR_URL}</a>')
+
+    def changeEvent(self, e):
+        # システムのテーマ (パレット) が切り替わったら配色を追従させる
+        if e.type() in (qenum(QtCore.QEvent, "Type", "PaletteChange"),
+                        qenum(QtCore.QEvent, "Type", "ApplicationPaletteChange")) \
+                and self.theme_mode == "auto" and self.theme_name is not None:
+            QtCore.QTimer.singleShot(0, self.apply_theme)
+        super().changeEvent(e)
+
     def about(self):
         QtWidgets.QMessageBox.about(
             self, f"{APP_NAME} について",
             f"<h3>{APP_NAME}</h3><p>バージョン {self.version}</p>"
             f"<p>Motivnavi OS のアプリをアップデートするツールです。</p>"
-            f"<p>製作: <b>{VENDOR}</b><br><a href='{VENDOR_URL}'>{VENDOR_URL}</a></p>"
-            f"<p style='color:#777'>Qt: {QT_API} / 設定: {config_path()}</p>")
+            f"<p>製作: <b>{VENDOR}</b><br><a href='{VENDOR_URL}' style='color:{self.theme['link']}'>{VENDOR_URL}</a></p>"
+            f"<p style='color:{self.theme['muted']}'>Qt: {QT_API} / 設定: {config_path()}</p>")
 
     def _toggle_log(self, on):
         self.logview.setVisible(on)
@@ -820,9 +926,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_check_done(self):
         self.busy(False)
         n = sum(1 for c in self.cards.values() if c.has_update())
+        errors = sum(1 for c in self.cards.values() if c.result and c.result["status"] == "error")
         now = datetime.now().strftime("%H:%M")
         if n:
             self.subtitle.setText(f"{n} 件のアップデートがあります（{now} 確認）")
+        elif errors:
+            self.subtitle.setText(f"{errors} 件のアプリを確認できませんでした（{now} 確認）")
         else:
             self.subtitle.setText(f"すべて最新です（{now} 確認）")
         self.statusBar().showMessage("確認が完了しました", 5000)
@@ -922,7 +1031,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rows = "".join(
             f"<tr><td style='white-space:nowrap'>{fmt_date(c['date'])}</td>"
             f"<td><code>{c['short']}</code></td><td>{_esc(c['subject'])}</td>"
-            f"<td style='color:#777'>{_esc(c['author'])}</td></tr>"
+            f"<td style='color:{self.theme['muted']}'>{_esc(c['author'])}</td></tr>"
             for c in res.get("incoming", []))
         d = QtWidgets.QDialog(self)
         d.setWindowTitle(f"{card.target.get('name', tid)} の変更内容")
