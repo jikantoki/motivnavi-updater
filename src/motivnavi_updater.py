@@ -521,18 +521,25 @@ class TargetCard(QtWidgets.QFrame):
         left.addLayout(head)
         sub = QtWidgets.QLabel(f"{target.get('description', '')}  ·  {target['path']}")
         sub.setObjectName("muted")
+        sub.setWordWrap(True)
         left.addWidget(sub)
 
         grid = QtWidgets.QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(2)
-        grid.addWidget(self._key("現在のコミット"), 0, 0)
-        grid.addWidget(self._key("リモートの最新"), 1, 0)
+        top = qenum(QtCore.Qt, "AlignmentFlag", "AlignTop")
+        grid.addWidget(self._key("現在のコミット"), 0, 0, top)
+        grid.addWidget(self._key("リモートの最新"), 1, 0, top)
         self.local_lbl = QtWidgets.QLabel("—")
         self.remote_lbl = QtWidgets.QLabel("—")
         for w in (self.local_lbl, self.remote_lbl):
             w.setTextFormat(qenum(QtCore.Qt, "TextFormat", "RichText"))
             w.setTextInteractionFlags(qenum(QtCore.Qt, "TextInteractionFlag", "TextSelectableByMouse"))
+            # 長いコミットメッセージは折り返して全文を表示 (カードを画面より広げない)
+            w.setWordWrap(True)
+            w.setMinimumWidth(0)
+            w.setSizePolicy(qenum(QtWidgets.QSizePolicy, "Policy", "Ignored"),
+                            qenum(QtWidgets.QSizePolicy, "Policy", "Preferred"))
         grid.addWidget(self.local_lbl, 0, 1)
         grid.addWidget(self.remote_lbl, 1, 1)
         grid.setColumnStretch(1, 1)
@@ -575,10 +582,9 @@ class TargetCard(QtWidgets.QFrame):
             return "—"
         rel = fmt_relative(c["date"])
         date = fmt_date(c["date"]) + (f"（{rel}）" if rel else "")
-        subject = c["subject"]
-        if len(subject) > 60:
-            subject = subject[:59] + "…"
-        return f"<b>{date}</b>  <code>{c['short']}</code>  {_esc(subject)}"
+        # 日時とハッシュは途中で改行しない。メッセージは必要なら折り返す
+        return (f"<span style='white-space:nowrap'><b>{date}</b>&nbsp;&nbsp;<code>{c['short']}</code></span>"
+                f"&nbsp;&nbsp;{_esc(c['subject'])}")
 
     def apply_result(self, res):
         self.result = res
@@ -737,6 +743,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tbox.addWidget(title)
         self.subtitle = QtWidgets.QLabel("Motivnavi OS のアプリを最新の状態に保ちます")
         self.subtitle.setObjectName("subtitle")
+        self.subtitle.setWordWrap(True)
         tbox.addWidget(self.subtitle)
         head.addLayout(tbox, 1)
         self.check_btn = QtWidgets.QPushButton("更新を確認")
@@ -772,6 +779,8 @@ class MainWindow(QtWidgets.QMainWindow):
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(qenum(QtWidgets.QFrame, "Shape", "NoFrame"))
+        # 横スクロールは出さず、カードの幅を画面幅に合わせる
+        scroll.setHorizontalScrollBarPolicy(qenum(QtCore.Qt, "ScrollBarPolicy", "ScrollBarAlwaysOff"))
         scroll.setWidget(cards_box)
         v.addWidget(scroll, 3)
 
@@ -799,6 +808,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.footer = QtWidgets.QLabel()
         self.footer.setObjectName("footer")
         self.footer.setOpenExternalLinks(True)
+        self.footer.setWordWrap(True)
         self.footer.setAlignment(qenum(QtCore.Qt, "AlignmentFlag", "AlignHCenter"))
         v.addWidget(self.footer)
 
