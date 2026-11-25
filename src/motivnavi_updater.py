@@ -680,6 +680,10 @@ class TargetCard(QtWidgets.QFrame):
             gap = fmt_gap(rem and rem["date"], loc and loc["date"])
             if gap:
                 note = f"リモートの最新コミットは、現在のコミットより {gap} 新しいです。" + (f"\n{note}" if note else "")
+            if res.get("ahead"):
+                note = (f"手元の履歴がリモートとつながっていません（手元だけのコミット {res['ahead']} 件）。"
+                        "アップデートすると、リモートの内容に合わせ直します（元の状態はバックアップ用のブランチに残します）。"
+                        + (f"\n{note}" if note else ""))
         elif st == "ahead":
             self.set_status(st)
             note = f"手元に未プッシュのコミットが {res['ahead']} 件あります。"

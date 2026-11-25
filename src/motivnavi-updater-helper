@@ -24,6 +24,7 @@ import pwd
 import shutil
 import subprocess
 import sys
+import time
 
 INSTALLED_DIR = "/usr/lib/motivnavi-updater"
 SYSTEM_CONFIG = "/etc/motivnavi-updater/targets.json"
@@ -202,6 +203,69 @@ def info(t):
     return res
 
 
+def upstream(t):
+    """追跡しているリモートとブランチ (例: ("origin", "main")) を返す。"""
+    path = t["path"]
+    if t.get("branch"):
+        return "origin", t["branch"]
+    rc, up, _ = git_capture(path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if rc == 0 and "/" in up:
+        return tuple(up.split("/", 1))
+    _, branch, _ = git_capture(path, "rev-parse", "--abbrev-ref", "HEAD")
+    return "origin", branch
+
+
+def pull(t):
+    """git pull --ff-only。履歴がリモートとつながっていない (リモート側で履歴が
+    作り直された) ときだけ、git reset --hard でリモートの内容に合わせ直す。"""
+    path = t["path"]
+    say(f"==> {t.get('name', t['id'])}: git pull ({path})")
+    args = ["pull", "--ff-only"]
+    if t.get("branch"):
+        args += ["origin", t["branch"]]
+    rc = git(t, *args)
+    if rc == 0:
+        return 0
+
+    remote, branch = upstream(t)
+    ref = f"{remote}/{branch}"
+    say(f"--> 早送り (fast-forward) できなかったので、{ref} との関係を調べます")
+    if git(t, "fetch", "--prune", remote) != 0:
+        say("[エラー] リモートに接続できないため、合わせ直しは行いません")
+        return rc
+    if git_capture(path, "rev-parse", "--verify", "-q", ref)[0] != 0:
+        say(f"[エラー] {ref} が見つかりません")
+        return rc
+    if git_capture(path, "merge-base", "--is-ancestor", "HEAD", ref)[0] == 0:
+        # 履歴はつながっている → 手元の変更とぶつかった等。勝手に消さない
+        _, st, _ = git_capture(path, "status", "--short")
+        say("[エラー] 履歴はリモートとつながっています。手元の変更が原因のため、自動では合わせ直しません")
+        if st:
+            say("手元で変更されているファイル:\n" + st)
+        return rc
+
+    # ここまで来たら履歴が分岐している (リモートで履歴が作り直された等)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = f"motivnavi-backup/{stamp}"
+    say(f"--> 手元の履歴が {ref} とつながっていません（リモート側で履歴が作り直された可能性があります）")
+    say(f"--> {ref} の内容に合わせ直します（git reset --hard）。元の状態はブランチ {backup} に残します")
+    if git(t, "branch", "-f", backup, "HEAD") != 0:
+        say("[エラー] バックアップ用のブランチを作れなかったため、中止します")
+        return rc
+    _, dirty, _ = git_capture(path, "status", "--porcelain", "--untracked-files=no")
+    if dirty:
+        say("--> 手元の変更を git stash に退避します")
+        if git(t, "-c", "user.name=Motivnavi Updater", "-c", "user.email=updater@localhost",
+               "stash", "push", "-m", f"motivnavi-updater {stamp}") != 0:
+            say("[エラー] 手元の変更を退避できなかったため、中止します")
+            return rc
+    rc = git(t, "reset", "--hard", ref)
+    if rc == 0:
+        say(f"--> {ref} に合わせ直しました")
+        say(f"    元に戻すとき: sudo git -C {path} reset --hard {backup}")
+    return rc
+
+
 def clone(t):
     """repo の URL から path に git clone する (path に無いときだけ)。"""
     path, repo = t.get("path", ""), t.get("repo", "")
@@ -291,11 +355,7 @@ def main(argv):
         return git(t, "fetch", "--prune", "origin")
 
     if action == "pull":
-        say(f"==> {t.get('name', t['id'])}: git pull ({t['path']})")
-        args = ["pull", "--ff-only"]
-        if branch:
-            args += ["origin", branch]
-        return git(t, *args)
+        return pull(t)
 
     if action == "post":
         try:
