@@ -10,6 +10,7 @@
 #
 # 使い方:
 #   motivnavi-updater-helper info  <対象ID>   (fetch して状態を JSON で出力)
+#   motivnavi-updater-helper clone <対象ID>   (未インストールのとき repo から path に取得)
 #   motivnavi-updater-helper fetch <対象ID>
 #   motivnavi-updater-helper pull  <対象ID>
 #   motivnavi-updater-helper post  <対象ID> <後処理の番号>
@@ -201,15 +202,48 @@ def info(t):
     return res
 
 
+def clone(t):
+    """repo の URL から path に git clone する (path に無いときだけ)。"""
+    path, repo = t.get("path", ""), t.get("repo", "")
+    if not os.path.isabs(path):
+        say(f"[エラー] path が不正です: {path}")
+        return 2
+    if not (repo.startswith("https://") or repo.startswith("git@")):
+        say("[エラー] この対象には取得元のリポジトリ (repo) が設定されていません")
+        return 2
+    if os.path.isdir(os.path.join(path, ".git")):
+        say(f"{path} は既にあります。clone はスキップします")
+        return 0
+    if os.path.exists(path) and (not os.path.isdir(path) or os.listdir(path)):
+        say(f"[エラー] {path} が既にあり、空ではありません。中身を確認してください")
+        return 3
+    parent = os.path.dirname(path.rstrip("/"))
+    if not os.path.isdir(parent):
+        say(f"$ mkdir -p {parent}")
+        os.makedirs(parent, mode=0o755, exist_ok=True)
+    say(f"==> {t.get('name', t['id'])}: git clone {repo} → {path}")
+    cmd = ["git", "clone"]
+    if t.get("branch"):
+        cmd += ["--branch", t["branch"]]
+    cmd += [repo, path]
+    # 書き出すファイルの権限は親フォルダ (/motivnavi) の権限に合わせる
+    return run(cmd, parent, repo_umask(parent))
+
+
 def resolve_command(cmd, cwd):
     cmd = list(cmd)
     if not cmd:
         return cmd
-    # ./script.sh に実行権限が無い場合は bash で実行
-    if cmd[0].startswith("./"):
-        p = os.path.join(cwd, cmd[0][2:])
+    # ./script.sh に実行権限が無い場合は bash で実行 (先頭の env VAR=値 は飛ばして判定)
+    i = 0
+    if cmd[0] == "env":
+        i = 1
+        while i < len(cmd) and "=" in cmd[i] and not cmd[i].startswith("./"):
+            i += 1
+    if i < len(cmd) and cmd[i].startswith("./"):
+        p = os.path.join(cwd, cmd[i][2:])
         if os.path.isfile(p) and not os.access(p, os.X_OK):
-            cmd = ["bash"] + cmd
+            cmd = cmd[:i] + ["bash"] + cmd[i:]
     # docker compose (v2) が無ければ docker-compose (v1) を使う
     if cmd[:2] == ["docker", "compose"]:
         ok = subprocess.run(["docker", "compose", "version"],
@@ -234,6 +268,13 @@ def main(argv):
     if len(argv) < 3:
         say("[エラー] 対象IDを指定してください")
         return 2
+
+    if action == "clone":
+        t = load_targets().get(argv[2])
+        if t is None:
+            say(f"[エラー] 不明な対象です: {argv[2]}")
+            return 2
+        return clone(t)
 
     if action == "info":
         t = load_targets().get(argv[2])

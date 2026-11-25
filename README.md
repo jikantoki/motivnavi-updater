@@ -16,7 +16,10 @@ Motivnavi OS にプリインストールされたアプリを、GUI でアップ
   - `/motivnavi/linuxauto` … `build-deb.sh` で .deb をビルド → `apt install ./dist/linux-auto.deb`
   - `/motivnavi/motivnavi-welcome`（Welcome to Motivnavi）… `build-deb.sh` → `apt install ./dist/motivnavi.deb`
   - `/motivnavi/motivnavi-screentweaks`（Motivnavi Screentweaks）… `build-deb.sh` → `apt install ./dist/motivnavi-screentweaks.deb`
+  - `/motivnavi/fcitx5-osk-ja`（Fcitx 5 Osk JA）… `./install.sh --install`（ビルドからインストールまで）
   - `/motivnavi/updater` … このアップデーター自身。最新の .deb をビルドしてインストールし、新しい版で再起動
+- `/motivnavi` にまだ無いアプリは「未インストール」と表示され、**インストール** ボタンで
+  GitHub のリポジトリから `git clone` → インストール処理 まで行えます（「すべてアップデート」でもまとめてインストール）
 - 実行ログを画面下部に表示（アップデート時は自動で開きます）
 - タッチ操作しやすい大きめのボタン
 
@@ -117,6 +120,7 @@ git にはプッシュされた日時が記録されないため、「リモー�
   "name": "Castify",
   "description": "AzuraCast ラジオプレイヤー",
   "path": "/motivnavi/castify",
+  "repo": "https://github.com/jikantoki/castify",
   "branch": "main",
   "post_update": [
     { "label": "後処理の説明", "command": ["./build.sh"], "as": "user" }
@@ -124,6 +128,7 @@ git にはプッシュされた日時が記録されないため、「リモー�
 }
 ```
 
+- `repo` は未インストールのときに `git clone` する取得元（省略するとインストールボタンは出ません）
 - `branch` は省略可（省略時は現在のブランチの追跡先）
 - `as` は `"root"`（sudo で root として実行）、`"owner"`（sudo 経由でリポジトリの所有者として実行）、
   `"user"`（アプリを起動したユーザーで実行）のどれか

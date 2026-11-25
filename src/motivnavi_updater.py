@@ -250,6 +250,7 @@ class Sudo:
         return r.returncode, out
 
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # ログに出る色付け用の制御コードを消す
 SUDO_PROMPT_RE = re.compile(r"^\[sudo[^\]]*\][^:\n]*:\s*", re.MULTILINE)
 
 
@@ -474,10 +475,13 @@ class StepRunner(QtCore.QObject):
         self.proc = None
         self.ok = True
 
-    def start(self, targets):
+    def start(self, targets, install_ids=()):
         self.queue = []
         for t in targets:
-            steps = [("root", [helper_path(), "pull", t["id"]], "git pull")]
+            if t["id"] in install_ids:
+                steps = [("root", [helper_path(), "clone", t["id"]], "git clone")]
+            else:
+                steps = [("root", [helper_path(), "pull", t["id"]], "git pull")]
             for i, s in enumerate(t.get("post_update", [])):
                 label = s.get("label", " ".join(s["command"]))
                 if s.get("as", "root") in ("root", "owner"):
@@ -537,7 +541,7 @@ class StepRunner(QtCore.QObject):
         if self.proc is None:
             return
         text = bytes(self.proc.readAllStandardOutput()).decode("utf-8", "replace")
-        self.output.emit(strip_sudo_prompt(text))
+        self.output.emit(ANSI_RE.sub("", strip_sudo_prompt(text)))
 
     def _error(self, err):
         if err == qenum(QtCore.QProcess, "ProcessError", "FailedToStart"):
@@ -679,12 +683,31 @@ class TargetCard(QtWidgets.QFrame):
         elif st == "ahead":
             self.set_status(st)
             note = f"手元に未プッシュのコミットが {res['ahead']} 件あります。"
+        elif st == "missing":
+            self.set_status(st)
+            if self.can_install():
+                note = f"「インストール」を押すと {self.target['repo']} から {self.target['path']} に取得してインストールします。"
         else:
             self.set_status(st)
         self.note.setText(note)
         self.note.setVisible(bool(note))
         self.details_btn.setEnabled(bool(res.get("incoming")))
-        self.update_btn.setEnabled(st not in ("missing",))
+        self.refresh_button()
+
+    def can_install(self):
+        return bool(self.target.get("repo"))
+
+    def is_missing(self):
+        return self.result is not None and self.result["status"] == "missing"
+
+    def refresh_button(self, busy=False):
+        """未インストールなら「インストール」ボタンにする。"""
+        if self.is_missing():
+            self.update_btn.setText("インストール")
+            self.update_btn.setEnabled(self.can_install() and not busy)
+        else:
+            self.update_btn.setText("アップデート")
+            self.update_btn.setEnabled(not busy)
 
     def has_update(self):
         return self.result is not None and self.result["status"] == "update"
@@ -980,7 +1003,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not on:
             for c in self.cards.values():
                 if c.result:
-                    c.update_btn.setEnabled(c.result["status"] != "missing")
+                    c.refresh_button()
         if message:
             self.statusBar().showMessage(message)
 
@@ -1031,27 +1054,35 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # --- アップデート ---------------------------------------------------------
     def update_all(self):
-        if any(c.result and c.result["status"] == "unknown" for c in self.cards.values()):
-            # 権限不足で未確認のものがある → 管理者権限で確認してから続ける
+        if any(c.result is None or c.result["status"] == "unknown" for c in self.cards.values()):
+            # 未確認のものがある → 管理者権限で確認してから続ける
             self._update_after_check = True
             self.check(full=True)
             return
-        checked = [c for c in self.cards.values() if c.result is not None]
-        if checked:
-            targets = [c.target for c in self.cards.values() if c.has_update()]
-            if not targets:
-                QtWidgets.QMessageBox.information(self, APP_NAME, "すべて最新です。")
-                return
-        else:
-            targets = [t for t in self.targets if repo_state(t["path"]) != "missing"]
-        names = "\n".join(f"・{t.get('name', t['id'])}" for t in targets)
-        if not self._confirm(f"次のアプリをアップデートします。\n\n{names}\n\nよろしいですか？"):
+        updates = [c.target for c in self.cards.values() if c.has_update()]
+        installs = [c.target for c in self.cards.values() if c.is_missing() and c.can_install()]
+        if not updates and not installs:
+            QtWidgets.QMessageBox.information(self, APP_NAME, "すべて最新です。")
             return
-        self._run_update(targets)
+        text = ""
+        if updates:
+            text += "アップデート:\n" + "\n".join(f"・{t.get('name', t['id'])}" for t in updates) + "\n\n"
+        if installs:
+            text += "新しくインストール:\n" + "\n".join(f"・{t.get('name', t['id'])}" for t in installs) + "\n\n"
+        if not self._confirm(f"次のアプリを処理します。\n\n{text}よろしいですか？"):
+            return
+        self._run_update(updates + installs, {t["id"] for t in installs})
 
     def update_one(self, tid):
         card = self.cards[tid]
         t = card.target
+        if card.is_missing():
+            if not card.can_install():
+                return
+            if self._confirm(f"{t.get('name', tid)} をインストールしますか？\n\n"
+                             f"{t['repo']} を {t['path']} に取得して、インストール処理を実行します。"):
+                self._run_update([t], {tid})
+            return
         if card.result and card.result["status"] in ("latest", "ahead"):
             if not self._confirm(f"{t.get('name', tid)} は最新です。\ngit pull と後処理をもう一度実行しますか？"):
                 return
@@ -1064,7 +1095,7 @@ class MainWindow(QtWidgets.QMainWindow):
         no = qenum(QtWidgets.QMessageBox, "StandardButton", "No")
         return QtWidgets.QMessageBox.question(self, APP_NAME, text, yes | no, yes) == yes
 
-    def _run_update(self, targets):
+    def _run_update(self, targets, install_ids=()):
         if not self.sudo.ensure():
             self.log("[中止] 管理者権限を取得できませんでした\n")
             return
@@ -1074,7 +1105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_toggle.setChecked(True)
         self.busy(True, "アップデートしています…")
         self.log("\n--- アップデート開始 ---\n")
-        self.runner.start(targets)
+        self.runner.start(targets, set(install_ids))
 
     def _on_target_started(self, tid):
         self.cards[tid].set_status("updating")

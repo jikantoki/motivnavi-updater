@@ -5,6 +5,7 @@
       "name": "Mediablue",
       "description": "Bluetooth再生中の曲情報表示",
       "path": "/motivnavi/mediablue",
+      "repo": "https://github.com/jikantoki/mediablue",
       "post_update": [
         {
           "label": ".deb をビルド (scripts/build-deb.sh)",
@@ -23,6 +24,7 @@
       "name": "Linux Auto",
       "description": "Android Auto (Google DHU) 対応ツール",
       "path": "/motivnavi/linuxauto",
+      "repo": "https://github.com/jikantoki/LinuxAuto",
       "post_update": [
         {
           "label": ".deb をビルド (build-deb.sh)",
@@ -41,6 +43,7 @@
       "name": "Welcome to Motivnavi",
       "description": "Motivnavi OS のウェルカムアプリ",
       "path": "/motivnavi/motivnavi-welcome",
+      "repo": "https://github.com/jikantoki/motivnavi-welcome",
       "post_update": [
         {
           "label": ".deb をビルド (build-deb.sh)",
@@ -59,6 +62,7 @@
       "name": "Motivnavi Screentweaks",
       "description": "画面の点灯・スリープ設定（スクリーン設定）",
       "path": "/motivnavi/motivnavi-screentweaks",
+      "repo": "https://github.com/jikantoki/motivnavi-screentweaks",
       "post_update": [
         {
           "label": ".deb をビルド (build-deb.sh)",
@@ -73,10 +77,25 @@
       ]
     },
     {
+      "id": "fcitx5-osk-ja",
+      "name": "Fcitx 5 Osk JA",
+      "description": "日本語向けオンスクリーンキーボード",
+      "path": "/motivnavi/fcitx5-osk-ja",
+      "repo": "https://github.com/jikantoki/fcitx5-osk-ja",
+      "post_update": [
+        {
+          "label": "ビルドしてインストール (install.sh --install)",
+          "command": ["./install.sh", "--install"],
+          "as": "root"
+        }
+      ]
+    },
+    {
       "id": "updater",
       "name": "Motivnavi Updater",
       "description": "このアップデーター自身",
       "path": "/motivnavi/updater",
+      "repo": "https://github.com/jikantoki/motivnavi-updater",
       "self": true,
       "post_update": [
         {
